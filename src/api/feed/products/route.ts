@@ -4,28 +4,9 @@ import { ContainerRegistrationKeys, getVariantAvailability, Modules, QueryContex
 import z from "zod";
 
 
-// id
-// itemgroup_id (hovedprodukt)
-// title
-// description
-// link
-// image_link
-// price
-// availability
-// (-) brand
-// (-) condition
-// (-) gtin
-// mpn (sku)
-// color (hvis tilgængeligt)
-// size (hvis tilgængeligt)
-// product_type
-// google_product_category
-// sale_price
-// material (hvis tilgængeligt)
-//
-
 type ExtendedVariantDTO = ProductVariantDTO & {
   calculated_price: CalculatedPriceSet
+  availability: number;
 }
 
 type extendedProductVariantDTO = ProductDTO & {
@@ -54,21 +35,19 @@ type VariantAvailabilityResult = {
 
 
 const schema = z.object({
-  currency_code: z.string().optional(),
+  currency: z.string().optional(),
 })
 
 export type RouteSchema = z.infer<typeof schema>;
 
 export async function GET(
-  req: MedusaRequest,
+  req: MedusaRequest<{}, RouteSchema>,
   res: MedusaResponse
 ) {
   const regionsModule = req.scope.resolve(Modules.REGION);
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const remoteQuery = req.scope.resolve(ContainerRegistrationKeys.REMOTE_QUERY);
 
   const result = schema.safeParse(req.query);
-
 
   const regions = await regionsModule.listRegions()
 
@@ -83,8 +62,8 @@ export async function GET(
     })
   }
 
-  if (result.success && result?.data.currency_code) {
-    const region = regions.find((region) => region.currency_code === result.data.currency_code);
+  if (result.success && result?.data.currency) {
+    const region = regions.find((region) => region.currency_code === result.data.currency);
 
     if (!region) {
       return res.status(404).json({
@@ -98,7 +77,7 @@ export async function GET(
 
   const { data: products } = await query.graph({
     entity: "product",
-    fields: ["*", "variants.*", "variants.calculated_price.*", "variants.options.*", "sales_channels.*"],
+    fields: ["*", "variants.*", "variants.calculated_price.*", "variants.options.*", "sales_channels.*", "type.*"],
     context: {
       variants: {
         calculated_price: QueryContext({
@@ -129,23 +108,23 @@ export async function GET(
     // Return the availability data for this product's variants
     const available = await getVariantAvailability(query, variantIDWithSalesChannel);
 
-    return {
+    const ProductVariantWithAvailability = {
       ...product,
-      variants: product.variants.map((variant) => ({
+      variants: product.variants.map((variant) => {
         return {
           ...variant,
-          available: available[variant.id].availability,
+          availability: available[variant.id]?.availability || 0,
         }
-      }))
+      })
     }
+    return ProductVariantWithAvailability;
+
+
 
   });
 
   // Wait for all availability checks to complete
-  const productsWithAvailability = await Promise.all(availabilityPromises);
-
-
-
+  const productsWithAvailability = await Promise.all(availabilityPromises) as unknown as extendedProductVariantDTO[]
 
 
 
@@ -163,30 +142,28 @@ export async function GET(
     return result;
   }
 
-
-
-
-
-  const mappedVariants = products.map((product) => {
+  const mappedVariants = productsWithAvailability.flatMap((product) => {
     const variants = product.variants.map((variant: ExtendedVariantDTO) => {
-
-
       const variantOptions = handleVariantOptions(variant.options);
+
+      const defaultPrice = `${variant.calculated_price.original_amount} ${currency_code}`
+      const salesPrice = `${variant.calculated_price.calculated_amount} ${currency_code}`
+
 
       return {
         id: variant.id,
         itemgroup_id: product.id,
-        title: variant.title,
+        title: product.title,
         description: product.description,
         link: product.handle,
-        image_link: product.thumbnail,
-        price: variant.calculated_price?.original_price || variant.calculated_price?.calculated_amount || "missing price",
+        image_link: product?.thumbnail,
+        price: defaultPrice,
         ...variantOptions,
-        availability: variant.manage_inventory,
+        availability: variant.availability,
         mpn: variant.sku,
-        product_type: product?.product_type || "",
-        sale_price: variant.calculated_price?.calculated_amount || variant.calculated_price?.original_price,
-        material: variant.material || "",
+        product_type: product.type?.value,
+        sale_price: salesPrice,
+        material: product.material || "",
       }
     })
     return variants
