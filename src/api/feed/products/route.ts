@@ -82,7 +82,7 @@ export async function GET(
 
     const { data: productBatch } = await query.graph({
       entity: "product",
-      fields: ["*", "variants.*", "variants.calculated_price.*", "variants.options.*", "sales_channels.*", "type.*"],
+      fields: ["*", "variants.*", "variants.calculated_price.*", "options.*", "variants.options.*", "sales_channels.*", "type.*"],
       context: {
         variants: {
           calculated_price: QueryContext({
@@ -152,6 +152,7 @@ export async function GET(
   const mappedVariants = allProductsWithAvailability.flatMap((product) => {
     const variants = product.variants.map((variant: ExtendedVariantDTO) => {
       const variantOptions = handleVariantOptions(variant.options);
+
 
       const defaultPrice = `${variant.calculated_price.original_amount} ${currency_code}`
       const salesPrice = `${variant.calculated_price.calculated_amount} ${currency_code}`
