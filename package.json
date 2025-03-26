@@ -1,8 +1,8 @@
 {
-  "name": "@oak/product-feed",
+  "name": "@oak-digital/product-feed",
   "version": "0.0.1",
   "description": "Medusa product feed plugin",
-  "author": "Medusa (https://medusajs.com)",
+  "author": "oak-digital",
   "license": "MIT",
   "files": [
     ".medusa/server"

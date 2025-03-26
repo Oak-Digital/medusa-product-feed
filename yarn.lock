@@ -3248,9 +3248,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@oak/product-feed@workspace:.":
+"@oak-digital/product-feed@workspace:.":
   version: 0.0.0-use.local
-  resolution: "@oak/product-feed@workspace:."
+  resolution: "@oak-digital/product-feed@workspace:."
   dependencies:
     "@medusajs/admin-sdk": "npm:2.6.1"
     "@medusajs/cli": "npm:2.6.1"

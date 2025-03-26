@@ -32,6 +32,7 @@ export async function GET(
   res: MedusaResponse
 ) {
   const regionsModule = req.scope.resolve(Modules.REGION);
+  const productModule = req.scope.resolve(Modules.PRODUCT);
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
 
   const result = schema.safeParse(req.query);
@@ -66,12 +67,10 @@ export async function GET(
   }
 
   // First, get count of products to determine number of batches
-  const countQuery = await query.graph({
-    entity: "product",
-    fields: ["id"],
-  });
+  const [, count] = await productModule.listAndCountProducts();
 
-  const totalProducts = countQuery.data.length;
+
+  const totalProducts = count || 0;
   const batches = Math.ceil(totalProducts / BATCH_SIZE);
 
   let allProductsWithAvailability: extendedProductVariantDTO[] = [];
@@ -96,6 +95,8 @@ export async function GET(
         skip: offset,
       }
     }) as { data: extendedProductVariantDTO[] };
+
+    console.log(productBatch.length)
 
     const availabilityPromises = productBatch.map(async (product) => {
       // Get variant IDs without async (which was causing Promise arrays)
