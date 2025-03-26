@@ -95,8 +95,6 @@ export async function GET(
       }
     }) as { data: extendedProductVariantDTO[] };
 
-    console.log(productBatch.length)
-
     const availabilityPromises = productBatch.map(async (product) => {
       // Get variant IDs without async (which was causing Promise arrays)
       const variantIds = product.variants.map(variant => variant.id);
@@ -159,21 +157,21 @@ export async function GET(
         const salesPrice = `${variant.calculated_price?.calculated_amount} ${currency_code}`
 
         return {
-        id: variant.id,
-        itemgroup_id: product.id,
-        title: product.title,
-        description: product.description,
-        link: product.handle,
-        image_link: product?.thumbnail,
-        price: defaultPrice,
-        ...variantOptions,
-        availability: variant.availability,
-        mpn: variant.sku,
-        product_type: product.type?.value,
-        sale_price: salesPrice,
-        material: product.material || "",
-      }
-    })
+          id: variant.id,
+          itemgroup_id: product.id,
+          title: product.title,
+          description: product.description,
+          link: product.handle,
+          image_link: product?.thumbnail,
+          price: defaultPrice,
+          ...variantOptions,
+          availability: variant.availability,
+          mpn: variant.sku,
+          product_type: product.type?.value,
+          sale_price: salesPrice,
+          material: product.material || "",
+        }
+      })
     return variants
   })
 
