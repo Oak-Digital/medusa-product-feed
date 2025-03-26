@@ -69,7 +69,6 @@ export async function GET(
   // First, get count of products to determine number of batches
   const [, count] = await productModule.listAndCountProducts();
 
-
   const totalProducts = count || 0;
   const batches = Math.ceil(totalProducts / BATCH_SIZE);
 
@@ -151,14 +150,15 @@ export async function GET(
   }
 
   const mappedVariants = allProductsWithAvailability.flatMap((product) => {
-    const variants = product.variants.map((variant: ExtendedVariantDTO) => {
-      const variantOptions = handleVariantOptions(variant.options);
+    const variants = product.variants
+      .filter((variant: ExtendedVariantDTO) => variant.calculated_price?.original_amount !== undefined)
+      .map((variant: ExtendedVariantDTO) => {
+        const variantOptions = handleVariantOptions(variant.options);
 
+        const defaultPrice = `${variant.calculated_price?.original_amount} ${currency_code}`
+        const salesPrice = `${variant.calculated_price?.calculated_amount} ${currency_code}`
 
-      const defaultPrice = `${variant.calculated_price.original_amount} ${currency_code}`
-      const salesPrice = `${variant.calculated_price.calculated_amount} ${currency_code}`
-
-      return {
+        return {
         id: variant.id,
         itemgroup_id: product.id,
         title: product.title,
