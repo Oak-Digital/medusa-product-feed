@@ -1,4 +1,3 @@
-
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { CalculatedPriceSet, ProductDTO, ProductOptionValueDTO, ProductVariantDTO, SalesChannelDTO } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys, getVariantAvailability, Modules, QueryContext } from "@medusajs/framework/utils";
@@ -57,6 +56,9 @@ export async function GET(
   let region_id: string = defaultRegion.id;
   let currency_code: string = defaultRegion.currency_code;
 
+  // Internal batch size configuration - not exposed via query params
+  const BATCH_SIZE = 50;
+
   if (!regions.length) {
     return res.status(404).json({
       message: "No regions found",
@@ -76,58 +78,75 @@ export async function GET(
     currency_code = region.currency_code;
   }
 
-  const { data: products } = await query.graph({
+  // First, get count of products to determine number of batches
+  const countQuery = await query.graph({
     entity: "product",
-    fields: ["*", "variants.*", "variants.calculated_price.*", "variants.options.*", "sales_channels.*", "type.*"],
-    context: {
-      variants: {
-        calculated_price: QueryContext({
-          region_id: region_id,
-          currency_code: currency_code,
-        }),
-      },
-    },
-  }) as { data: extendedProductVariantDTO[] }
-
-  const availabilityPromises = products.map(async (product) => {
-    // Get variant IDs without async (which was causing Promise arrays)
-    const variantIds = product.variants.map(variant => variant.id);
-
-    // Get sales channel ID if available
-    const salesChannelId = product.sales_channels.length > 0 ?
-      product.sales_channels[0].id : null;
-
-    if (!salesChannelId) {
-      return []; // Return empty array if no sales channel
-    }
-
-    const variantIDWithSalesChannel: VariantAvailabilityData = {
-      variant_ids: variantIds,
-      sales_channel_id: salesChannelId,
-    };
-
-    // Return the availability data for this product's variants
-    const available = await getVariantAvailability(query, variantIDWithSalesChannel);
-
-    const ProductVariantWithAvailability = {
-      ...product,
-      variants: product.variants.map((variant) => {
-        return {
-          ...variant,
-          availability: available[variant.id]?.availability || 0,
-        }
-      })
-    }
-    return ProductVariantWithAvailability;
-
-
-
+    fields: ["id"],
   });
 
-  // Wait for all availability checks to complete
-  const productsWithAvailability = await Promise.all(availabilityPromises) as unknown as extendedProductVariantDTO[]
+  const totalProducts = countQuery.data.length;
+  const batches = Math.ceil(totalProducts / BATCH_SIZE);
 
+  let allProductsWithAvailability: extendedProductVariantDTO[] = [];
 
+  // Process products in batches
+  for (let batchIndex = 0; batchIndex < batches; batchIndex++) {
+    const offset = batchIndex * BATCH_SIZE;
+
+    const { data: productBatch } = await query.graph({
+      entity: "product",
+      fields: ["*", "variants.*", "variants.calculated_price.*", "variants.options.*", "sales_channels.*", "type.*"],
+      context: {
+        variants: {
+          calculated_price: QueryContext({
+            region_id: region_id,
+            currency_code: currency_code,
+          }),
+        },
+      },
+      pagination: {
+        take: BATCH_SIZE,
+        skip: offset,
+      }
+    }) as { data: extendedProductVariantDTO[] };
+
+    const availabilityPromises = productBatch.map(async (product) => {
+      // Get variant IDs without async (which was causing Promise arrays)
+      const variantIds = product.variants.map(variant => variant.id);
+
+      // Get sales channel ID if available
+      const salesChannelId = product.sales_channels.length > 0 ?
+        product.sales_channels[0].id : null;
+
+      if (!salesChannelId) {
+        return { ...product, variants: product.variants.map(v => ({ ...v, availability: 0 })) };
+      }
+
+      const variantIDWithSalesChannel: VariantAvailabilityData = {
+        variant_ids: variantIds,
+        sales_channel_id: salesChannelId,
+      };
+
+      // Return the availability data for this product's variants
+      const available = await getVariantAvailability(query, variantIDWithSalesChannel);
+
+      return {
+        ...product,
+        variants: product.variants.map((variant) => {
+          return {
+            ...variant,
+            availability: available[variant.id]?.availability || 0,
+          }
+        })
+      };
+    });
+
+    // Wait for all availability checks to complete for this batch
+    const batchProductsWithAvailability = await Promise.all(availabilityPromises) as extendedProductVariantDTO[];
+
+    // Append batch results to full result set
+    allProductsWithAvailability = [...allProductsWithAvailability, ...batchProductsWithAvailability];
+  }
 
   const handleVariantOptions = (options: ProductOptionValueDTO[]) => {
     // Create an object with option titles as keys and their values as values
@@ -143,13 +162,12 @@ export async function GET(
     return result;
   }
 
-  const mappedVariants = productsWithAvailability.flatMap((product) => {
+  const mappedVariants = allProductsWithAvailability.flatMap((product) => {
     const variants = product.variants.map((variant: ExtendedVariantDTO) => {
       const variantOptions = handleVariantOptions(variant.options);
 
       const defaultPrice = `${variant.calculated_price.original_amount} ${currency_code}`
       const salesPrice = `${variant.calculated_price.calculated_amount} ${currency_code}`
-
 
       return {
         id: variant.id,
@@ -168,7 +186,6 @@ export async function GET(
       }
     })
     return variants
-
   })
 
   res.json(mappedVariants);
