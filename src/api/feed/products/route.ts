@@ -72,15 +72,25 @@ export async function GET(
   const totalProducts = count || 0;
   const batches = Math.ceil(totalProducts / BATCH_SIZE);
 
-  let allProductsWithAvailability: extendedProductVariantDTO[] = [];
+  // Array to hold the final mapped variant data
+  let mappedVariants: any[] = [];
 
   // Process products in batches
   for (let batchIndex = 0; batchIndex < batches; batchIndex++) {
     const offset = batchIndex * BATCH_SIZE;
 
+    // Fetch only the required fields
     const { data: productBatch } = await query.graph({
       entity: "product",
-      fields: ["*", "variants.*", "variants.calculated_price.*", "options.*", "variants.options.*", "sales_channels.*", "type.*"],
+      fields: [
+        "id", "title", "description", "handle", "thumbnail", "material", // Product fields
+        "type.value", // ProductType fields
+        "sales_channels.id", // SalesChannel fields
+        "variants.id", "variants.sku", // Variant fields
+        "variants.options.value", "variants.options.option.title", // VariantOption fields
+        "variants.calculated_price.original_amount", // CalculatedPriceSet fields
+        "variants.calculated_price.calculated_amount"
+      ],
       context: {
         variants: {
           calculated_price: QueryContext({
@@ -93,47 +103,49 @@ export async function GET(
         take: BATCH_SIZE,
         skip: offset,
       }
-    }) as { data: extendedProductVariantDTO[] };
+    }) as { data: extendedProductVariantDTO[] }; // Type needs adjustment if not all fields are present
 
-    const availabilityPromises = productBatch.map(async (product) => {
-      // Get variant IDs without async (which was causing Promise arrays)
-      const variantIds = product.variants.map(variant => variant.id);
+    // --- Optimized Availability Fetching ---
+    const salesChannelVariantMap = new Map<string, string[]>(); // Map<salesChannelId, variantId[]>
 
-      // Get sales channel ID if available
-      const salesChannelId = product.sales_channels.length > 0 ?
-        product.sales_channels[0].id : null;
-
-      if (!salesChannelId) {
-        return { ...product, variants: product.variants.map(v => ({ ...v, availability: 0 })) };
+    // Collect variants grouped by sales channel
+    for (const product of productBatch) {
+      if (product.sales_channels.length > 0) {
+        const scId = product.sales_channels[0].id;
+        if (!salesChannelVariantMap.has(scId)) {
+          salesChannelVariantMap.set(scId, []);
+        }
+        const variantIdsForSC = salesChannelVariantMap.get(scId)!;
+        for (const variant of product.variants) {
+          variantIdsForSC.push(variant.id);
+        }
       }
+    }
 
-      const variantIDWithSalesChannel: VariantAvailabilityData = {
-        variant_ids: variantIds,
-        sales_channel_id: salesChannelId,
-      };
+    // Fetch availability for each sales channel group
+    const availabilityMap = new Map<string, { availability: number }>();
+    const availabilityPromises = [];
 
-      // Return the availability data for this product's variants
-      const available = await getVariantAvailability(query, variantIDWithSalesChannel);
+    for (const [scId, variantIds] of salesChannelVariantMap.entries()) {
+      if (variantIds.length > 0) {
+        availabilityPromises.push(
+          getVariantAvailability(query, { variant_ids: variantIds, sales_channel_id: scId })
+        );
+      }
+    }
 
-      return {
-        ...product,
-        variants: product.variants.map((variant) => {
-          return {
-            ...variant,
-            availability: available[variant.id]?.availability || 0,
-          }
-        })
-      };
-    });
+    // Combine results into a single map keyed by variant ID
+    const availabilityResults = await Promise.all(availabilityPromises);
+    for (const result of availabilityResults) {
+      for (const variantId in result) {
+        availabilityMap.set(variantId, result[variantId]);
+      }
+    }
+    // --- End Optimized Availability Fetching ---
 
-    // Wait for all availability checks to complete for this batch
-    const batchProductsWithAvailability = await Promise.all(availabilityPromises) as extendedProductVariantDTO[];
 
-    // Append batch results to full result set
-    allProductsWithAvailability = [...allProductsWithAvailability, ...batchProductsWithAvailability];
-  }
-
-  const handleVariantOptions = (options: ProductOptionValueDTO[]) => {
+    // --- Incremental Mapping ---
+    const handleVariantOptions = (options: ProductOptionValueDTO[]) => {
     // Create an object with option titles as keys and their values as values
     const result: Record<string, string> = {};
 
@@ -144,36 +156,43 @@ export async function GET(
       }
     });
 
-    return result;
-  }
+      return result;
+    }
 
-  const mappedVariants = allProductsWithAvailability.flatMap((product) => {
-    const variants = product.variants
-      .filter((variant: ExtendedVariantDTO) => variant.calculated_price?.original_amount !== undefined)
-      .map((variant: ExtendedVariantDTO) => {
-        const variantOptions = handleVariantOptions(variant.options);
+    // Map products in the current batch
+    const batchMappedVariants = productBatch.flatMap((product) => {
+      const variants = product.variants
+        .filter((variant: ExtendedVariantDTO) => variant.calculated_price?.original_amount !== undefined)
+        .map((variant: ExtendedVariantDTO) => {
+          const variantOptions = handleVariantOptions(variant.options);
+          const availability = availabilityMap.get(variant.id)?.availability || 0; // Get availability from map
 
-        const defaultPrice = `${variant.calculated_price?.original_amount} ${currency_code}`
-        const salesPrice = `${variant.calculated_price?.calculated_amount} ${currency_code}`
+          const defaultPrice = `${variant.calculated_price?.original_amount} ${currency_code}`
+          const salesPrice = `${variant.calculated_price?.calculated_amount} ${currency_code}`
 
-        return {
-          id: variant.id,
-          itemgroup_id: product.id,
-          title: product.title,
-          description: product.description,
-          link: product.handle,
-          image_link: product?.thumbnail,
-          price: defaultPrice,
-          ...variantOptions,
-          availability: variant.availability,
-          mpn: variant.sku,
-          product_type: product.type?.value,
-          sale_price: salesPrice,
-          material: product.material || "",
-        }
-      })
-    return variants
-  })
+          return {
+            id: variant.id,
+            itemgroup_id: product.id,
+            title: product.title,
+            description: product.description,
+            link: product.handle,
+            image_link: product?.thumbnail,
+            price: defaultPrice,
+            ...variantOptions,
+            availability: availability, // Use fetched availability
+            mpn: variant.sku,
+            product_type: product.type?.value,
+            sale_price: salesPrice,
+            material: product.material || "",
+          }
+        })
+      return variants
+    });
+
+    // Append batch results to the main array
+    mappedVariants = mappedVariants.concat(batchMappedVariants);
+    // --- End Incremental Mapping ---
+  } // End of batch loop
 
   res.status(200).json(mappedVariants);
 }
