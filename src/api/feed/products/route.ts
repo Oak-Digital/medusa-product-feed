@@ -129,6 +129,7 @@ export async function GET(
     for (const [scId, variantIds] of salesChannelVariantMap.entries()) {
       if (variantIds.length > 0) {
         availabilityPromises.push(
+          // @ts-ignore
           getVariantAvailability(query, { variant_ids: variantIds, sales_channel_id: scId })
         );
       }
@@ -146,15 +147,15 @@ export async function GET(
 
     // --- Incremental Mapping ---
     const handleVariantOptions = (options: ProductOptionValueDTO[]) => {
-    // Create an object with option titles as keys and their values as values
-    const result: Record<string, string> = {};
+      // Create an object with option titles as keys and their values as values
+      const result: Record<string, string> = {};
 
-    options.forEach((optionValue) => {
-      if (optionValue.option && optionValue.option.title && optionValue.value) {
-        // Use the option title (e.g., "Size", "Color") as the key
-        result[optionValue.option.title.toLowerCase()] = optionValue.value;
-      }
-    });
+      options.forEach((optionValue) => {
+        if (optionValue.option && optionValue.option.title && optionValue.value) {
+          // Use the option title (e.g., "Size", "Color") as the key
+          result[optionValue.option.title.toLowerCase()] = optionValue.value;
+        }
+      });
 
       return result;
     }
