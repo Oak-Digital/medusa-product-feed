@@ -171,12 +171,18 @@ export async function GET(
           const defaultPrice = `${variant.calculated_price?.original_amount} ${currency_code}`
           const salesPrice = `${variant.calculated_price?.calculated_amount} ${currency_code}`
 
+          // Convert variantOptions object to URL query parameters
+          const linkableOptions = Object.entries(variantOptions)
+            .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+            .join('&');
+
           return {
             id: variant.id,
             itemgroup_id: product.id,
             title: product.title,
             description: product.description,
-            link: product.handle,
+            // add url query parameters of variant options to link handle
+            link: `${product.handle}?${linkableOptions}`,
             image_link: product?.thumbnail,
             price: defaultPrice,
             ...variantOptions,
