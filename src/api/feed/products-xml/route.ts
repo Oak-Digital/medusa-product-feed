@@ -151,10 +151,32 @@ export async function GET(
       // Create an object with option titles as keys and their values as values
       const result: Record<string, string> = {};
 
+      // Function to sanitize keys for XML element names
+      const sanitizeXmlName = (name: string): string => {
+        // Convert to lowercase
+        let sanitized = name.toLowerCase();
+
+        // Specific replacements for Danish characters
+        sanitized = sanitized.replace(/æ/g, 'ae');
+        sanitized = sanitized.replace(/ø/g, 'oe');
+        sanitized = sanitized.replace(/å/g, 'aa');
+
+        // Replace remaining invalid XML characters (anything not a-z, 0-9, or _) with underscore
+        sanitized = sanitized.replace(/[^a-z0-9_]/g, '_');
+
+        // Ensure it doesn't start with a number or underscore (if necessary, prepend a character)
+        // XML names must start with a letter or underscore.
+        if (!/^[a-z_]/.test(sanitized)) {
+          sanitized = 'opt_' + sanitized; // Prepend 'opt_' if it starts with a digit or other invalid start char
+        }
+        return sanitized;
+      };
+
       options.forEach((optionValue) => {
         if (optionValue.option && optionValue.option.title && optionValue.value) {
-          // Use the option title (e.g., "Size", "Color") as the key
-          result[optionValue.option.title.toLowerCase()] = optionValue.value;
+          // Sanitize the option title to create a valid XML element name
+          const key = sanitizeXmlName(optionValue.option.title);
+          result[key] = optionValue.value;
         }
       });
 
@@ -210,9 +232,10 @@ export async function GET(
   };
 
   const builder = new Builder({
-    // Optional: Configure builder options if needed, e.g., root name, CDATA, etc.
-    // rootName: 'products', // Explicitly set root name if not using the structure above
-    // cdata: true, // Use CDATA for text nodes if needed
+    // Explicitly set root name
+    rootName: 'products',
+    // Wrap text nodes in CDATA sections to prevent issues with special characters in content
+    // cdata: true,
   });
   const xml = builder.buildObject(feedObject);
 
