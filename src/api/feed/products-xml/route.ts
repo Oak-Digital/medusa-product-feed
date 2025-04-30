@@ -232,10 +232,6 @@ export async function GET(
   };
 
   const builder = new Builder({
-    // Explicitly set root name
-    rootName: 'products',
-    // Wrap text nodes in CDATA sections to prevent issues with special characters in content
-    // cdata: true,
   });
   const xml = builder.buildObject(feedObject);
 
