@@ -200,20 +200,22 @@ export async function GET(
             .join('&');
 
           return {
-            id: variant.id,
-            itemgroup_id: product.id,
-            title: product.title,
-            description: product.description,
-            // add url query parameters of variant options to link handle
-            link: `${product.handle}?${linkableOptions}`,
-            image_link: product?.thumbnail,
-            price: defaultPrice,
-            ...variantOptions,
-            availability: availability, // Use fetched availability
-            mpn: variant.sku,
-            product_type: product.type?.value,
-            sale_price: salesPrice,
-            material: product.material || "",
+            item_group_id: product.id, // Matches Facebook 'item_group_id'
+            id: variant.id, // Renamed from 'variant_id' to match Facebook 'id'
+            title: product.title, // Matches Facebook 'title'
+            description: product.description, // Matches Facebook 'description'
+            // Prepend base URL and add query parameters for variant options
+            link: `https://phertz.dk/smykke/${product.handle}?${linkableOptions}`, // Updated to match Facebook 'link' format requirement
+            image_link: product?.thumbnail, // Matches Facebook 'image_link' (using product thumbnail)
+            price: defaultPrice, // Matches Facebook 'price'
+            ...variantOptions, // Include dynamic variant options
+            availability: availability > 0 ? "in stock" : "out of stock", // Added 'availability' as required
+            mpn: variant.sku, // Standard identifier, often used by Facebook
+            product_type: product.type?.value, // Standard identifier
+            sale_price: salesPrice, // Standard identifier
+            material: product.material || "", // Added 'material' as required
+            brand: "P. Hertz", // Added 'brand' as required
+            condition: "new", // Added 'condition' as required
           }
         })
       return variants
