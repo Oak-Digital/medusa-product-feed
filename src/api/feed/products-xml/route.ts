@@ -3,6 +3,8 @@ import { CalculatedPriceSet, ProductDTO, ProductOptionValueDTO, ProductVariantDT
 import { ContainerRegistrationKeys, getVariantAvailability, Modules, QueryContext } from "@medusajs/framework/utils";
 import { Builder } from "xml2js";
 import z from "zod";
+import { PRODUCT_FEED_MODULE } from "../../../modules/product-feed";
+import ProductFeedService from "../../../modules/product-feed/service";
 
 
 type ExtendedVariantDTO = ProductVariantDTO & {
@@ -35,6 +37,8 @@ export async function GET(
   const regionsModule = req.scope.resolve(Modules.REGION);
   const productModule = req.scope.resolve(Modules.PRODUCT);
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+
+  const pf: ProductFeedService = req.scope.resolve(PRODUCT_FEED_MODULE);
 
   const result = schema.safeParse(req.query);
 
@@ -176,7 +180,7 @@ export async function GET(
         if (optionValue.option && optionValue.option.title && optionValue.value) {
           // Sanitize the option title to create a valid XML element name
           const key = sanitizeXmlName(optionValue.option.title);
-          result[key] = optionValue.value;
+          result[`g:${key}`] = optionValue.value;
         }
       });
 
@@ -199,24 +203,34 @@ export async function GET(
             .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
             .join('&');
 
-          return {
-            item_group_id: product.id, // Matches Facebook 'item_group_id'
-            id: variant.id, // Renamed from 'variant_id' to match Facebook 'id'
-            title: product.title, // Matches Facebook 'title'
-            description: product.description, // Matches Facebook 'description'
-            // Prepend base URL and add query parameters for variant options
-            link: `https://phertz.dk/smykke/${product.handle}?${linkableOptions}`, // Updated to match Facebook 'link' format requirement
-            image_link: product?.thumbnail, // Matches Facebook 'image_link' (using product thumbnail)
-            price: defaultPrice, // Matches Facebook 'price'
-            ...variantOptions, // Include dynamic variant options
-            availability: availability > 0 ? "in stock" : "out of stock", // Added 'availability' as required
-            mpn: variant.sku, // Standard identifier, often used by Facebook
-            product_type: product.type?.value, // Standard identifier
-            sale_price: salesPrice, // Standard identifier
-            material: product.material || "", // Added 'material' as required
-            brand: "P. Hertz", // Added 'brand' as required
-            condition: "new", // Added 'condition' as required
-          }
+          // Map data to Google Feed specification (g: prefix for standard fields)
+          const itemData: Record<string, any> = {
+            'g:id': variant.id, // Unique identifier for the variant
+            'g:item_group_id': product.id, // Common identifier for all variants of the same product
+            'g:title': product.title,
+            'g:description': product.description,
+            'g:link': `https://phertz.dk/smykke/${product.handle}?${linkableOptions}`, // Link to the specific variant page
+            'g:image_link': product?.thumbnail, // Use product thumbnail, consider variant image if available
+            'g:brand': "P. Hertz",
+            'g:condition': "new",
+            'g:availability': availability > 0 ? "in stock" : "out of stock",
+            'g:price': defaultPrice,
+            'g:sale_price': salesPrice,
+            'g:mpn': variant.sku, // Manufacturer Part Number (SKU)
+            'g:product_type': product.type?.value,
+            'g:material': product.material || "",
+            // Add custom variant options without 'g:' prefix
+            ...variantOptions,
+          };
+
+          // Remove keys with empty/null values to keep the XML clean
+          Object.keys(itemData).forEach(key => {
+            if (itemData[key] === null || itemData[key] === "" || itemData[key] === undefined) {
+              delete itemData[key];
+            }
+          });
+
+          return itemData;
         })
       return variants
     });
@@ -226,14 +240,32 @@ export async function GET(
     // --- End Incremental Mapping ---
   } // End of batch loop
 
-  // Structure the data for XML conversion
+
+  const options = pf.getOptions();
+  // Structure the data for XML conversion according to RSS 2.0 and Google Feed spec
   const feedObject = {
-    products: {
-      product: mappedVariants,
+    rss: {
+      $: { // Attributes for the <rss> tag
+        'xmlns:g': 'http://base.google.com/ns/1.0',
+        version: '2.0',
+      },
+      channel: {
+        title: options.title, // Customize as needed
+        link: options.link,      // Store's base URL
+        description: options.description, // Customize as needed
+        item: mappedVariants, // Array of item objects
+      },
     },
   };
 
+  // Configure the XML builder
+  // - `rootName`: Ensures the root element is 'rss' (though structure implies it)
+  // - `headless`: Set to true to avoid the <?xml ...?> declaration if not desired (Facebook/Google usually accept it)
+  // - `cdata`: Set to true to wrap text nodes in CDATA sections, which can help prevent issues with special characters in descriptions, etc.
   const builder = new Builder({
+    rootName: 'rss',
+    headless: false, // Keep the XML declaration
+    cdata: true,     // Use CDATA for text nodes
   });
   const xml = builder.buildObject(feedObject);
 
