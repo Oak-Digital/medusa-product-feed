@@ -263,7 +263,7 @@ export async function GET(
   // - `headless`: Set to true to avoid the <?xml ...?> declaration if not desired (Facebook/Google usually accept it)
   // - `cdata`: Set to true to wrap text nodes in CDATA sections, which can help prevent issues with special characters in descriptions, etc.
   const builder = new Builder({
-    rootName: 'rss',
+    // rootName: 'rss',
     headless: false, // Keep the XML declaration
     cdata: true,     // Use CDATA for text nodes
   });
