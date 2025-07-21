@@ -177,7 +177,7 @@ export async function GET(
       };
 
       options.forEach((optionValue) => {
-        if (optionValue.value.includes("Default")) {
+        if (optionValue.value.includes("Default") || optionValue.value.includes("default")) {
           return result; // Skip default options
         }
 

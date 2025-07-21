@@ -151,7 +151,7 @@ export async function GET(
       const result: Record<string, string> = {};
 
       options.forEach((optionValue) => {
-        if (optionValue.value.includes("Default")) {
+        if (optionValue.value.includes("Default") || optionValue.value.includes("default")) {
           return result; // Skip default options
         }
 
