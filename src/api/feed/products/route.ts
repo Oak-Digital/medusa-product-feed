@@ -83,7 +83,7 @@ export async function GET(
     const { data: productBatch } = await query.graph({
       entity: "product",
       fields: [
-        "id", "title", "description", "handle", "thumbnail", "material", // Product fields
+        "id", "title", "description", "handle", "thumbnail", "images.url", "material", // Product fields
         "type.value", // ProductType fields
         "sales_channels.id", // SalesChannel fields
         "variants.id", "variants.sku", // Variant fields
@@ -151,6 +151,10 @@ export async function GET(
       const result: Record<string, string> = {};
 
       options.forEach((optionValue) => {
+        if (optionValue.value.includes("Default")) {
+          return result; // Skip default options
+        }
+
         if (optionValue.option && optionValue.option.title && optionValue.value) {
           // Use the option title (e.g., "Size", "Color") as the key
           result[optionValue.option.title.toLowerCase()] = optionValue.value;
@@ -176,6 +180,7 @@ export async function GET(
             .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
             .join('&');
 
+
           return {
             id: variant.id,
             itemgroup_id: product.id,
@@ -184,6 +189,8 @@ export async function GET(
             // add url query parameters of variant options to link handle
             link: `${product.handle}?${linkableOptions}`,
             image_link: product?.thumbnail,
+            addtional_image_1: product?.images?.[0]?.url, // Use product thumbnail, consider variant image if available
+            addtional_image_2: product?.images?.[1]?.url, // Use product thumbnail, consider variant image if available
             price: defaultPrice,
             ...variantOptions,
             availability: availability, // Use fetched availability

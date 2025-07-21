@@ -88,7 +88,7 @@ export async function GET(
     const { data: productBatch } = await query.graph({
       entity: "product",
       fields: [
-        "id", "title", "description", "handle", "thumbnail", "material", // Product fields
+        "id", "title", "description", "handle", "thumbnail", "images.url", "material", // Product fields
         "type.value", // ProductType fields
         "sales_channels.id", // SalesChannel fields
         "variants.id", "variants.sku", // Variant fields
@@ -177,6 +177,10 @@ export async function GET(
       };
 
       options.forEach((optionValue) => {
+        if (optionValue.value.includes("Default")) {
+          return result; // Skip default options
+        }
+
         if (optionValue.option && optionValue.option.title && optionValue.value) {
           // Sanitize the option title to create a valid XML element name
           const key = sanitizeXmlName(optionValue.option.title);
@@ -211,6 +215,8 @@ export async function GET(
             'g:description': product.description,
             'g:link': `https://phertz.dk/smykke/${product.handle}?${linkableOptions}`, // Link to the specific variant page
             'g:image_link': product?.thumbnail, // Use product thumbnail, consider variant image if available
+            'g:addtional_image_1': product?.images?.[0]?.url, // Use product thumbnail, consider variant image if available
+            'g:addtional_image_2': product?.images?.[1]?.url, // Use product thumbnail, consider variant image if available
             'g:brand': "P. Hertz",
             'g:condition': "new",
             'g:availability': availability > 0 ? "in stock" : "out of stock",
