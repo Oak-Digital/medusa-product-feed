@@ -2,6 +2,8 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { CalculatedPriceSet, ProductDTO, ProductOptionValueDTO, ProductVariantDTO, SalesChannelDTO } from "@medusajs/framework/types";
 import { ContainerRegistrationKeys, getVariantAvailability, Modules, QueryContext } from "@medusajs/framework/utils";
 import z from "zod";
+import { PRODUCT_FEED_MODULE } from "../../../modules/product-feed";
+import ProductFeedService from "../../../modules/product-feed/service";
 
 
 type ExtendedVariantDTO = ProductVariantDTO & {
@@ -34,6 +36,11 @@ export async function GET(
   const regionsModule = req.scope.resolve(Modules.REGION);
   const productModule = req.scope.resolve(Modules.PRODUCT);
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+
+
+  const pf: ProductFeedService = req.scope.resolve(PRODUCT_FEED_MODULE);
+
+  const store_url = pf.getOptions().link || "https://www.example.com";
 
   const result = schema.safeParse(req.query);
 
@@ -187,7 +194,7 @@ export async function GET(
             title: product.title,
             description: product.description,
             // add url query parameters of variant options to link handle
-            link: `${product.handle}?${linkableOptions}`,
+            link: `${store_url}/${product.handle}?${linkableOptions}`,
             image_link: product?.thumbnail,
             addtional_image_1: product?.images?.[0]?.url, // Use product thumbnail, consider variant image if available
             addtional_image_2: product?.images?.[1]?.url, // Use product thumbnail, consider variant image if available
