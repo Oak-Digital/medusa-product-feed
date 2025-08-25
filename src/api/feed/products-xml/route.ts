@@ -40,6 +40,10 @@ export async function GET(
 
   const pf: ProductFeedService = req.scope.resolve(PRODUCT_FEED_MODULE);
 
+
+  const store_url = pf.getOptions().link || "https://example.com";
+  const brand = pf.getOptions().brand || "My Store";
+
   const result = schema.safeParse(req.query);
 
   const regions = await regionsModule.listRegions()
@@ -177,7 +181,7 @@ export async function GET(
       };
 
       options.forEach((optionValue) => {
-        if (optionValue.value.includes("Default") || optionValue.value.includes("default")) {
+        if (optionValue.value.includes("Default")) {
           return result; // Skip default options
         }
 
@@ -213,11 +217,11 @@ export async function GET(
             'g:item_group_id': product.id, // Common identifier for all variants of the same product
             'g:title': product.title,
             'g:description': product.description,
-            'g:link': `https://phertz.dk/smykke/${product.handle}?${linkableOptions}`, // Link to the specific variant page
+            'g:link': `${store_url}/${product.handle}?${linkableOptions}`, // Link to the specific variant page
             'g:image_link': product?.thumbnail, // Use product thumbnail, consider variant image if available
             'g:addtional_image_1': product?.images?.[0]?.url, // Use product thumbnail, consider variant image if available
             'g:addtional_image_2': product?.images?.[1]?.url, // Use product thumbnail, consider variant image if available
-            'g:brand': "P. Hertz",
+            'g:brand': `${brand}`, // Use store name or configured brand
             'g:condition': "new",
             'g:availability': availability > 0 ? "in stock" : "out of stock",
             'g:price': defaultPrice,
