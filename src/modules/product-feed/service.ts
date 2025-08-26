@@ -1,5 +1,6 @@
-import { CalculatedPriceSet, ProductDTO, ProductOptionValueDTO, ProductVariantDTO, SalesChannelDTO } from "@medusajs/framework/types";
-import { ContainerRegistrationKeys, getVariantAvailability, Modules, QueryContext } from "@medusajs/framework/utils";
+import { ProductOptionValueDTO } from "@medusajs/framework/types";
+import { getVariantAvailability, QueryContext } from "@medusajs/framework/utils";
+import { ExtendedProductDTO, ExtendedVariantDTO } from "./types";
 
 type ProductFeedOptions = {
   title: string, // Customize as needed
@@ -43,6 +44,23 @@ export default class ProductFeedService {
     // Output mode
     mode?: "json" | "xml"
 
+    // Optional hooks for client-specific customization
+    // Called for every mapped item (variant). Return the final item to include in the feed.
+    itemTransform?: (item: any, ctx: {
+      product: ExtendedProductDTO
+      variant: ExtendedVariantDTO
+      availability: number
+      regionId: string
+      currencyCode: string
+    }) => any | Promise<any>
+
+    // Optionally include or exclude fields from each item after transform
+    includeFields?: string[]
+    excludeFields?: string[]
+
+
+
+
     // Internal tuning
     batchSize?: number
   }): Promise<any[]> {
@@ -54,11 +72,14 @@ export default class ProductFeedService {
       currencyCode,
       mode = "json",
       batchSize = 50,
+      itemTransform,
+      includeFields,
+      excludeFields,
     } = args
 
     const options = this.getOptions()
     const store_url = options.link || "https://example.com"
-    const brand = options.brand || "My Store"
+    const brand = options?.brand || undefined
 
     // Resolve region and currency
     const regions = await regionsModule.listRegions()
@@ -74,15 +95,6 @@ export default class ProductFeedService {
     const selectedRegionId: string = selectedRegion.id
     const selectedCurrencyCode: string = selectedRegion.currency_code
 
-    type ExtendedVariantDTO = ProductVariantDTO & {
-      calculated_price: CalculatedPriceSet
-      availability: number
-    }
-
-    type ExtendedProductDTO = ProductDTO & {
-      variants: ExtendedVariantDTO[]
-      sales_channels: SalesChannelDTO[]
-    }
 
     // 1) Count to determine batches
     const [, count] = await productModule.listAndCountProducts()
@@ -142,6 +154,7 @@ export default class ProductFeedService {
           "sales_channels.id",
           "variants.id",
           "variants.sku",
+          "variants.barcode",
           "variants.options.value",
           "variants.options.option.title",
           "variants.calculated_price.original_amount",
@@ -197,72 +210,122 @@ export default class ProductFeedService {
       }
 
       // Map batch
-      const batchMapped = productBatch.flatMap((product) => {
-        return product.variants
-          .filter((variant: ExtendedVariantDTO) => variant.calculated_price?.original_amount !== undefined)
-          .map((variant: ExtendedVariantDTO) => {
-            const variantOptions = handleVariantOptions(variant.options)
-            const availability = availabilityMap.get(variant.id)?.availability || 0
-            const defaultPrice = `${variant.calculated_price?.original_amount} ${selectedCurrencyCode}`
-            const salesPrice = `${variant.calculated_price?.calculated_amount} ${selectedCurrencyCode}`
+      const batchMapped = await Promise.all(
+        productBatch.flatMap((product) => {
+          return product.variants
+            .filter((variant: ExtendedVariantDTO) => variant.calculated_price?.original_amount !== undefined)
+            .map(async (variant: ExtendedVariantDTO) => {
+              const variantOptions = handleVariantOptions(variant.options)
+              const availability = availabilityMap.get(variant.id)?.availability || 0
+              const defaultPrice = `${variant.calculated_price?.original_amount} ${selectedCurrencyCode.toUpperCase()}`
+              const salesPrice = `${variant.calculated_price?.calculated_amount} ${selectedCurrencyCode.toUpperCase()}`
 
-            const linkableOptions = Object.entries(variantOptions)
-              .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-              .join("&")
+              const linkableOptions = Object.entries(variantOptions)
+                .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+                .join("&")
 
-            if (mode === "xml") {
-              const itemData: Record<string, any> = {
-                "g:id": variant.id,
-                "g:item_group_id": product.id,
-                "g:title": product.title,
-                "g:description": product.description,
-                "g:link": `${store_url}/${product.handle}?${linkableOptions}`,
-                "g:image_link": product?.thumbnail,
-                "g:addtional_image_1": product?.images?.[0]?.url,
-                "g:addtional_image_2": product?.images?.[1]?.url,
-                "g:brand": `${brand}`,
-                "g:condition": "new",
-                "g:availability": availability > 0 ? "in stock" : "out of stock",
-                "g:price": defaultPrice,
-                "g:sale_price": salesPrice,
-                "g:mpn": variant.sku,
-                "g:product_type": (product as any).type?.value,
-                "g:material": (product as any).material || "",
+              if (mode === "xml") {
+                let itemData: Record<string, any> = {
+                  "g:id": variant.id,
+                  "g:item_group_id": product.id,
+                  "g:title": product.title,
+                  "g:description": product.description,
+                  "g:link": `${store_url}/${product.handle}?${linkableOptions}`,
+                  "g:image_link": product?.thumbnail,
+                  "g:addtional_image_1": product?.images?.[0]?.url,
+                  "g:addtional_image_2": product?.images?.[1]?.url,
+                  "g:brand": brand || product.type?.value,
+                  "g:condition": "new",
+                  "g:availability": availability > 0 ? "in stock" : "out of stock",
+                  "g:price": defaultPrice,
+                  "g:sale_price": salesPrice,
+                  "g:mpn": variant.sku,
+                  "g:product_type": (product as any).type?.value,
+                  "g:material": (product as any).material || "",
+                  ...variantOptions,
+                }
+                // Allow client-specific mutation
+                if (typeof itemTransform === 'function') {
+                  itemData = await itemTransform(itemData, {
+                    product,
+                    variant,
+                    availability,
+                    regionId: selectedRegionId,
+                    currencyCode: selectedCurrencyCode,
+                  })
+                }
+                // Field filtering
+                if (Array.isArray(includeFields) && includeFields.length) {
+                  itemData = Object.fromEntries(
+                    Object.entries(itemData).filter(([k]) => includeFields.includes(k))
+                  )
+                }
+                if (Array.isArray(excludeFields) && excludeFields.length) {
+                  excludeFields.forEach((f) => delete itemData[f])
+                }
+                // strip empty values
+                Object.keys(itemData).forEach((key) => {
+                  if (
+                    itemData[key] === null ||
+                    itemData[key] === undefined ||
+                    itemData[key] === ""
+                  ) {
+                    delete itemData[key]
+                  }
+                })
+                return itemData
+              }
+
+              // JSON mode
+              let item: any = {
+                id: variant.id,
+                itemgroup_id: product.id,
+                title: product.title,
+                description: product.description,
+                link: `${store_url}/${product.handle}?${linkableOptions}`,
+                image_link: product?.thumbnail,
+                addtional_image_1: (product as any)?.images?.[0]?.url,
+                addtional_image_2: (product as any)?.images?.[1]?.url,
+                brand: brand,
+                price: defaultPrice,
                 ...variantOptions,
+                availability,
+                mpn: variant.sku,
+                product_type: (product as any).type?.value,
+                sale_price: salesPrice,
+                material: (product as any).material || "",
+              }
+              if (typeof itemTransform === 'function') {
+                item = await itemTransform(item, {
+                  product,
+                  variant,
+                  availability,
+                  regionId: selectedRegionId,
+                  currencyCode: selectedCurrencyCode,
+                })
+              }
+              if (Array.isArray(includeFields) && includeFields.length) {
+                item = Object.fromEntries(
+                  Object.entries(item).filter(([k]) => includeFields.includes(k))
+                )
+              }
+              if (Array.isArray(excludeFields) && excludeFields.length) {
+                excludeFields.forEach((f) => delete item[f])
               }
               // strip empty values
-              Object.keys(itemData).forEach((key) => {
+              Object.keys(item).forEach((key) => {
                 if (
-                  itemData[key] === null ||
-                  itemData[key] === undefined ||
-                  itemData[key] === ""
+                  item[key] === null ||
+                  item[key] === undefined ||
+                  item[key] === ""
                 ) {
-                  delete itemData[key]
+                  delete item[key]
                 }
               })
-              return itemData
-            }
-
-            // JSON mode
-            return {
-              id: variant.id,
-              itemgroup_id: product.id,
-              title: product.title,
-              description: product.description,
-              link: `${store_url}/${product.handle}?${linkableOptions}`,
-              image_link: product?.thumbnail,
-              addtional_image_1: (product as any)?.images?.[0]?.url,
-              addtional_image_2: (product as any)?.images?.[1]?.url,
-              price: defaultPrice,
-              ...variantOptions,
-              availability,
-              mpn: variant.sku,
-              product_type: (product as any).type?.value,
-              sale_price: salesPrice,
-              material: (product as any).material || "",
-            }
-          })
-      })
+              return item
+            })
+        })
+      )
 
       mappedVariants = mappedVariants.concat(batchMapped)
     }
@@ -270,4 +333,3 @@ export default class ProductFeedService {
     return mappedVariants
   }
 }
-

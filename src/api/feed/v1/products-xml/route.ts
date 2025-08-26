@@ -2,8 +2,8 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import { Builder } from "xml2js";
 import z from "zod";
-import { PRODUCT_FEED_MODULE } from "../../../modules/product-feed";
-import ProductFeedService from "../../../modules/product-feed/service";
+import { PRODUCT_FEED_MODULE } from "../../../../modules/product-feed";
+import ProductFeedService from "../../../../modules/product-feed/service";
 
 
 const schema = z.object({
@@ -22,10 +22,6 @@ export async function GET(
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
 
   const pf: ProductFeedService = req.scope.resolve(PRODUCT_FEED_MODULE);
-
-
-  const store_url = pf.getOptions().link || "https://example.com";
-  const brand = pf.getOptions().brand || "My Store";
 
   const result = schema.safeParse(req.query);
 
