@@ -1,8 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
 import z from "zod";
-import { PRODUCT_FEED_MODULE } from "../../../modules/product-feed";
-import ProductFeedService from "../../../modules/product-feed/service";
+import { PRODUCT_FEED_MODULE } from "../../../../modules/product-feed";
+import ProductFeedService from "../../../../modules/product-feed/service";
 import { RegionDTO } from "@medusajs/framework/types";
 
 const schema = z.object({
@@ -22,8 +22,6 @@ export async function GET(
 
 
   const pf: ProductFeedService = req.scope.resolve(PRODUCT_FEED_MODULE);
-
-  const store_url = pf.getOptions().link || "https://www.example.com";
 
   const result = schema.safeParse(req.query);
 
