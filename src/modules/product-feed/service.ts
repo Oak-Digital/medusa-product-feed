@@ -44,6 +44,10 @@ export default class ProductFeedService {
     // Output mode
     mode?: "json" | "xml"
 
+    // Google Merchant namespace control
+    // When true, XML keys are prefixed with `g:`. When false, no prefix.
+    GoogleMerchant?: boolean
+
     // Optional hooks for client-specific customization
     // Called for every mapped item (variant). Return the final item to include in the feed.
     itemTransform?: (item: any, ctx: {
@@ -71,6 +75,7 @@ export default class ProductFeedService {
       regionId,
       currencyCode,
       mode = "json",
+      GoogleMerchant = false,
       batchSize = 50,
       itemTransform,
       includeFields,
@@ -127,7 +132,8 @@ export default class ProductFeedService {
         if (optionValue.option?.title && optionValue.value) {
           if (mode === "xml") {
             const key = sanitizeXmlName(optionValue.option.title)
-            result[`g:${key}`] = optionValue.value
+            const finalKey = GoogleMerchant ? `g:${key}` : key
+            result[finalKey] = optionValue.value
           } else {
             result[optionValue.option.title.toLowerCase()] = optionValue.value
           }
@@ -225,23 +231,37 @@ export default class ProductFeedService {
                 .join("&")
 
               if (mode === "xml") {
+                const g = (k: string) => (GoogleMerchant ? `g:${k}` : k)
+                const thumbnail = product?.thumbnail
+                const rawImages: (string | undefined)[] = [
+                  product?.images?.[0]?.url,
+                  product?.images?.[1]?.url,
+                  product?.images?.[2]?.url,
+                ]
+                const additionalImages: string[] = []
+                for (const url of rawImages) {
+                  if (!url) continue
+                  if (url === thumbnail) continue
+                  if (additionalImages.includes(url)) continue
+                  additionalImages.push(url)
+                }
                 let itemData: Record<string, any> = {
-                  "g:id": variant.id,
-                  "g:item_group_id": product.id,
-                  "g:title": product.title,
-                  "g:description": product.description,
-                  "g:link": `${store_url}/${product.handle}?${linkableOptions}`,
-                  "g:image_link": product?.thumbnail,
-                  "g:addtional_image_1": product?.images?.[0]?.url,
-                  "g:addtional_image_2": product?.images?.[1]?.url,
-                  "g:brand": brand || product.type?.value,
-                  "g:condition": "new",
-                  "g:availability": availability > 0 ? "in stock" : "out of stock",
-                  "g:price": defaultPrice,
-                  "g:sale_price": salesPrice,
-                  "g:mpn": variant.sku,
-                  "g:product_type": (product as any).type?.value,
-                  "g:material": (product as any).material || "",
+                  [g("id")]: variant.id,
+                  [g("item_group_id")]: product.id,
+                  [g("title")]: product.title,
+                  [g("description")]: product.description,
+                  [g("link")]: `${store_url}/${product.handle}?${linkableOptions}`,
+                  [g("image_link")]: thumbnail,
+                  [g("additional_image_1")]: additionalImages[0],
+                  [g("additional_image_2")]: additionalImages[1],
+                  [g("brand")]: brand || product.type?.value,
+                  [g("condition")]: "new",
+                  [g("availability")]: availability > 0 ? "in stock" : "out of stock",
+                  [g("price")]: defaultPrice,
+                  [g("sale_price")]: salesPrice,
+                  [g("mpn")]: variant.sku,
+                  [g("product_type")]: (product as any).type?.value,
+                  [g("material")]: (product as any).material || "",
                   ...variantOptions,
                 }
                 // Allow client-specific mutation
@@ -277,23 +297,36 @@ export default class ProductFeedService {
               }
 
               // JSON mode
+              const thumbnail = product?.thumbnail
+              const rawImages: (string | undefined)[] = [
+                product?.images?.[0]?.url,
+                product?.images?.[1]?.url,
+                product?.images?.[2]?.url,
+              ]
+              const additionalImages: string[] = []
+              for (const url of rawImages) {
+                if (!url) continue
+                if (url === thumbnail) continue
+                if (additionalImages.includes(url)) continue
+                additionalImages.push(url)
+              }
               let item: any = {
                 id: variant.id,
                 itemgroup_id: product.id,
                 title: product.title,
                 description: product.description,
                 link: `${store_url}/${product.handle}?${linkableOptions}`,
-                image_link: product?.thumbnail,
-                addtional_image_1: (product as any)?.images?.[0]?.url,
-                addtional_image_2: (product as any)?.images?.[1]?.url,
+                image_link: thumbnail,
+                additional_image_1: additionalImages[0],
+                additional_image_2: additionalImages[1],
                 brand: brand,
                 price: defaultPrice,
-                ...variantOptions,
+                sale_price: salesPrice,
                 availability,
                 mpn: variant.sku,
                 product_type: (product as any).type?.value,
-                sale_price: salesPrice,
                 material: (product as any).material || "",
+                ...variantOptions,
               }
               if (typeof itemTransform === 'function') {
                 item = await itemTransform(item, {
