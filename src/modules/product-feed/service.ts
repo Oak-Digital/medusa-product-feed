@@ -67,6 +67,12 @@ export default class ProductFeedService {
 
     // Internal tuning
     batchSize?: number
+
+    // Optional pagination (by products page)
+    // If provided, only that page of products is processed.
+    // Note: Pagination is by products; number of returned items varies with variants per product.
+    page?: number
+    pageSize?: number
   }): Promise<any[]> {
     const {
       regionsModule,
@@ -77,6 +83,8 @@ export default class ProductFeedService {
       mode = "json",
       GoogleMerchant = false,
       batchSize = 50,
+      page,
+      pageSize,
       itemTransform,
       includeFields,
       excludeFields,
@@ -104,7 +112,8 @@ export default class ProductFeedService {
     // 1) Count to determine batches
     const [, count] = await productModule.listAndCountProducts()
     const totalProducts = count || 0
-    const batches = Math.ceil(totalProducts / batchSize)
+    const effectiveBatchSize = Math.max(1, pageSize ?? batchSize)
+    const batches = Math.ceil(totalProducts / effectiveBatchSize)
 
     let mappedVariants: any[] = []
 
@@ -143,8 +152,12 @@ export default class ProductFeedService {
     }
 
     // 2) Process in batches
-    for (let batchIndex = 0; batchIndex < batches; batchIndex++) {
-      const offset = batchIndex * batchSize
+    // Determine which batches to process
+    const startBatch = typeof page === 'number' && page > 0 ? page - 1 : 0
+    const endBatch = typeof page === 'number' && page > 0 ? startBatch : batches - 1
+
+    for (let batchIndex = startBatch; batchIndex <= endBatch; batchIndex++) {
+      const offset = batchIndex * effectiveBatchSize
 
       const { data: productBatch } = (await query.graph({
         entity: "product",
@@ -175,7 +188,7 @@ export default class ProductFeedService {
           },
         },
         pagination: {
-          take: batchSize,
+          take: effectiveBatchSize,
           skip: offset,
         },
       })) as { data: ExtendedProductDTO[] }

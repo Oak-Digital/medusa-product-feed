@@ -9,6 +9,8 @@ import ProductFeedService from "../../../../modules/product-feed/service";
 const schema = z.object({
   country_code: z.string().optional(),
   currency: z.string().optional(),
+  page: z.coerce.number().int().positive().optional(),
+  page_size: z.coerce.number().int().positive().optional(),
 })
 
 export type RouteSchema = z.infer<typeof schema>;
@@ -75,6 +77,8 @@ export async function GET(
     regionId: region_id,
     currencyCode: currency_code,
     mode: "xml",
+    page: result.success ? result.data?.page : undefined,
+    pageSize: result.success ? result.data?.page_size : undefined,
   })
 
 

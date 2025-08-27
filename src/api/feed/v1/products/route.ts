@@ -8,6 +8,8 @@ import { RegionDTO } from "@medusajs/framework/types";
 const schema = z.object({
   country_code: z.string().optional(),
   currency: z.string().optional(),
+  page: z.coerce.number().int().positive().optional(),
+  page_size: z.coerce.number().int().positive().optional(),
 })
 
 export type RouteSchema = z.infer<typeof schema>;
@@ -79,6 +81,8 @@ export async function GET(
     regionId: region_id,
     currencyCode: currency_code,
     mode: "json",
+    page: result.success ? result.data?.page : undefined,
+    pageSize: result.success ? result.data?.page_size : undefined,
   })
 
   res.status(200).json(items);

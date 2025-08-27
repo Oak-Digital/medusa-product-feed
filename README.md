@@ -63,6 +63,10 @@ Both endpoints are public by default (no auth middleware). Adjust as needed in y
 
 - `country_code`: Two/three-letter country code used to pick a Region (e.g., `DK`, `US`, `de`). If provided and matched, it takes precedence over `currency`.
 - `currency`: Currency code used to pick a Region (e.g., `USD`, `EUR`).
+- `page` (JSON only): 1-based page number to paginate the feed by products. When set, only that page of products is processed. The number of returned items depends on variants per product.
+- `page_size` (JSON only): Number of products per page. Defaults to 50 if not provided.
+
+XML note: Although the XML route accepts `page` and `page_size` for development/testing, most aggregators (e.g., Google Merchant) expect a single, complete feed URL. If you paginate the XML, ensure your consumer supports fetching multiple pages or configure multiple feeds accordingly.
 
 If neither is provided, the first configured Region is used.
 
@@ -74,6 +78,9 @@ curl http://localhost:9000/feed/products
 
 # JSON feed for a specific currency
 curl "http://localhost:9000/feed/products?currency=USD"
+
+# JSON feed, paginated (products page 2, 100 products/page)
+curl "http://localhost:9000/feed/products?page=2&page_size=100"
 
 # XML feed for a specific country
 curl "http://localhost:9000/feed/products-xml?country_code=DK"
