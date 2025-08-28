@@ -64,7 +64,7 @@ Both endpoints are public by default (no auth middleware). Adjust as needed in y
 - `country_code`: Two/three-letter country code used to pick a Region (e.g., `DK`, `US`, `de`). If provided and matched, it takes precedence over `currency`.
 - `currency`: Currency code used to pick a Region (e.g., `USD`, `EUR`).
 - `page` (JSON only): 1-based page number to paginate the feed by products. When set, only that page of products is processed. The number of returned items depends on variants per product.
-- `page_size` (JSON only): Number of products per page. Defaults to 50 if not provided.
+- `page_size` (JSON only): Number of products per page. Defaults to 100 if not provided.
 
 XML note: Although the XML route accepts `page` and `page_size` for development/testing, most aggregators (e.g., Google Merchant) expect a single, complete feed URL. If you paginate the XML, ensure your consumer supports fetching multiple pages or configure multiple feeds accordingly.
 

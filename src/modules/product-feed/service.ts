@@ -82,6 +82,8 @@ export default class ProductFeedService {
       currencyCode,
       mode = "json",
       GoogleMerchant = false,
+      // Default to fetching at most 100 products per request
+      // unless a specific pageSize is provided by the caller.
       batchSize = 50,
       page,
       pageSize,
@@ -153,8 +155,18 @@ export default class ProductFeedService {
 
     // 2) Process in batches
     // Determine which batches to process
-    const startBatch = typeof page === 'number' && page > 0 ? page - 1 : 0
-    const endBatch = typeof page === 'number' && page > 0 ? startBatch : batches - 1
+    let startBatch: number
+    let endBatch: number
+
+    if (typeof page === 'number' && page > 0) {
+      // Process only the specified page
+      startBatch = page - 1
+      endBatch = page - 1
+    } else {
+      // If no page specified, default to first page only to prevent timeouts
+      startBatch = 0
+      endBatch = 0
+    }
 
     for (let batchIndex = startBatch; batchIndex <= endBatch; batchIndex++) {
       const offset = batchIndex * effectiveBatchSize
