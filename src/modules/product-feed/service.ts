@@ -1,6 +1,7 @@
 import { ProductOptionValueDTO } from "@medusajs/framework/types";
 import { getVariantAvailability, QueryContext } from "@medusajs/framework/utils";
 import { ExtendedProductDTO, ExtendedVariantDTO } from "./types";
+import { Builder } from "xml2js";
 
 type ProductFeedOptions = {
   title: string, // Customize as needed
@@ -25,6 +26,38 @@ export default class ProductFeedService {
     return this.options_
   }
 
+
+  async buildToXml(mappedVariants: any[]): Promise<string> {
+    const options = this.getOptions();
+    const feedObject = {
+      rss: {
+        $: { // Attributes for the <rss> tag
+          'xmlns:g': 'http://base.google.com/ns/1.0',
+          version: '2.0',
+        },
+        channel: {
+          title: options.title, // Customize as needed
+          link: options.link,      // Store's base URL
+          description: options.description, // Customize as needed
+          item: mappedVariants, // Array of item objects
+        },
+      },
+    };
+
+    // Configure the XML builder
+    // - `rootName`: Ensures the root element is 'rss' (though structure implies it)
+    // - `headless`: Set to true to avoid the <?xml ...?> declaration if not desired (Facebook/Google usually accept it)
+    // - `cdata`: Set to true to wrap text nodes in CDATA sections, which can help prevent issues with special characters in descriptions, etc.
+    const builder = new Builder({
+      // rootName: 'rss',
+      headless: false, // Keep the XML declaration
+      cdata: true,     // Use CDATA for text nodes
+    });
+    const xml = builder.buildObject(feedObject);
+
+    return xml
+  }
+
   // Methods to generate the product feed
   /**
    * Build mapped feed data for products/variants with region-based pricing.
@@ -40,9 +73,6 @@ export default class ProductFeedService {
     // Region selection
     regionId?: string
     currencyCode?: string
-
-    // Output mode
-    mode?: "json" | "xml"
 
     // Google Merchant namespace control
     // When true, XML keys are prefixed with `g:`. When false, no prefix.
@@ -80,7 +110,6 @@ export default class ProductFeedService {
       query,
       regionId,
       currencyCode,
-      mode = "json",
       GoogleMerchant = false,
       // Default to fetching at most 100 products per request
       // unless a specific pageSize is provided by the caller.
@@ -112,11 +141,7 @@ export default class ProductFeedService {
 
 
     // 1) Count to determine batches
-    const [, count] = await productModule.listAndCountProducts()
-    const totalProducts = count || 0
     const effectiveBatchSize = Math.max(1, pageSize ?? batchSize)
-    const batches = Math.ceil(totalProducts / effectiveBatchSize)
-
     let mappedVariants: any[] = []
 
     // Helpers
@@ -141,13 +166,9 @@ export default class ProductFeedService {
         }
 
         if (optionValue.option?.title && optionValue.value) {
-          if (mode === "xml") {
-            const key = sanitizeXmlName(optionValue.option.title)
-            const finalKey = GoogleMerchant ? `g:${key}` : key
-            result[finalKey] = optionValue.value
-          } else {
-            result[optionValue.option.title.toLowerCase()] = optionValue.value
-          }
+          // Build with plain, lower-cased keys. If GoogleMerchant/XML is desired,
+          // we'll sanitize + prefix later in a single pass for the whole item.
+          result[optionValue.option.title.toLowerCase()] = optionValue.value
         }
       })
       return result
@@ -255,73 +276,6 @@ export default class ProductFeedService {
                 .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
                 .join("&")
 
-              if (mode === "xml") {
-                const g = (k: string) => (GoogleMerchant ? `g:${k}` : k)
-                const thumbnail = product?.thumbnail
-                const rawImages: (string | undefined)[] = [
-                  product?.images?.[0]?.url,
-                  product?.images?.[1]?.url,
-                  product?.images?.[2]?.url,
-                ]
-                const additionalImages: string[] = []
-                for (const url of rawImages) {
-                  if (!url) continue
-                  if (url === thumbnail) continue
-                  if (additionalImages.includes(url)) continue
-                  additionalImages.push(url)
-                }
-                let itemData: Record<string, any> = {
-                  [g("id")]: variant.id,
-                  [g("item_group_id")]: product.id,
-                  [g("title")]: product.title,
-                  [g("description")]: product.description,
-                  [g("link")]: `${store_url}/${product.handle}?${linkableOptions}`,
-                  [g("image_link")]: thumbnail,
-                  [g("additional_image_1")]: additionalImages[0],
-                  [g("additional_image_2")]: additionalImages[1],
-                  [g("brand")]: brand || product.type?.value,
-                  [g("condition")]: "new",
-                  [g("availability")]: availability > 0 ? "in stock" : "out of stock",
-                  [g("price")]: defaultPrice,
-                  [g("sale_price")]: salesPrice,
-                  [g("mpn")]: variant.sku,
-                  [g("product_type")]: (product as any).type?.value,
-                  [g("material")]: (product as any).material || "",
-                  ...variantOptions,
-                }
-                // Allow client-specific mutation
-                if (typeof itemTransform === 'function') {
-                  itemData = await itemTransform(itemData, {
-                    product,
-                    variant,
-                    availability,
-                    regionId: selectedRegionId,
-                    currencyCode: selectedCurrencyCode,
-                  })
-                }
-                // Field filtering
-                if (Array.isArray(includeFields) && includeFields.length) {
-                  itemData = Object.fromEntries(
-                    Object.entries(itemData).filter(([k]) => includeFields.includes(k))
-                  )
-                }
-                if (Array.isArray(excludeFields) && excludeFields.length) {
-                  excludeFields.forEach((f) => delete itemData[f])
-                }
-                // strip empty values
-                Object.keys(itemData).forEach((key) => {
-                  if (
-                    itemData[key] === null ||
-                    itemData[key] === undefined ||
-                    itemData[key] === ""
-                  ) {
-                    delete itemData[key]
-                  }
-                })
-                return itemData
-              }
-
-              // JSON mode
               const thumbnail = product?.thumbnail
               const rawImages: (string | undefined)[] = [
                 product?.images?.[0]?.url,
@@ -335,24 +289,44 @@ export default class ProductFeedService {
                 if (additionalImages.includes(url)) continue
                 additionalImages.push(url)
               }
-              let item: any = {
+
+              // Build a single base shape
+              let item: Record<string, any> = {
                 id: variant.id,
-                itemgroup_id: product.id,
+                item_group_id: product.id,
                 title: product.title,
                 description: product.description,
                 link: `${store_url}/${product.handle}?${linkableOptions}`,
                 image_link: thumbnail,
                 additional_image_1: additionalImages[0],
                 additional_image_2: additionalImages[1],
-                brand: brand,
+                brand: brand || (product as any).type?.value,
+                condition: "new",
+                availability,
                 price: defaultPrice,
                 sale_price: salesPrice,
-                availability,
                 mpn: variant.sku,
                 product_type: (product as any).type?.value,
                 material: (product as any).material || "",
                 ...variantOptions,
               }
+
+              // If GoogleMerchant is requested, sanitize keys and prefix with `g:`
+              if (GoogleMerchant) {
+                const prefixed: Record<string, any> = {}
+                for (const [k, v] of Object.entries(item)) {
+                  const key = `g:${sanitizeXmlName(k)}`
+                  // Google expects textual availability
+                  if (k === 'availability') {
+                    prefixed[key] = (availability > 0 ? 'in stock' : 'out of stock')
+                  } else {
+                    prefixed[key] = v
+                  }
+                }
+                item = prefixed
+              }
+
+              // Allow client-specific mutation
               if (typeof itemTransform === 'function') {
                 item = await itemTransform(item, {
                   product,
@@ -362,6 +336,8 @@ export default class ProductFeedService {
                   currencyCode: selectedCurrencyCode,
                 })
               }
+
+              // Field filtering on the final shape
               if (Array.isArray(includeFields) && includeFields.length) {
                 item = Object.fromEntries(
                   Object.entries(item).filter(([k]) => includeFields.includes(k))
@@ -370,13 +346,10 @@ export default class ProductFeedService {
               if (Array.isArray(excludeFields) && excludeFields.length) {
                 excludeFields.forEach((f) => delete item[f])
               }
-              // strip empty values
+
+              // Strip empty values
               Object.keys(item).forEach((key) => {
-                if (
-                  item[key] === null ||
-                  item[key] === undefined ||
-                  item[key] === ""
-                ) {
+                if (item[key] === null || item[key] === undefined || item[key] === "") {
                   delete item[key]
                 }
               })
@@ -389,5 +362,32 @@ export default class ProductFeedService {
     }
 
     return mappedVariants
+  }
+
+  // Convenience wrappers used by routes
+  async buildMappedFeedDataJson(args: Omit<Parameters<ProductFeedService["buildMappedFeedData"]>[0], "GoogleMerchant">) {
+    return this.buildMappedFeedData({
+      ...args,
+      GoogleMerchant: false,
+    })
+  }
+
+  async buildMappedFeedDataXml(args: Parameters<ProductFeedService["buildMappedFeedData"]>[0]) {
+    return this.buildMappedFeedData({
+      ...args,
+      GoogleMerchant: args.GoogleMerchant ?? false,
+    })
+  }
+
+  /**
+   * Convenience: build mapped data and immediately render XML.
+   * Uses GoogleMerchant-prefixed keys internally.
+   */
+  async buildFeedXml(args: Parameters<ProductFeedService["buildMappedFeedData"]>[0]) {
+    const mapped = await this.buildMappedFeedDataXml({
+      ...args,
+      GoogleMerchant: args.GoogleMerchant ?? false,
+    })
+    return this.buildToXml(mapped)
   }
 }

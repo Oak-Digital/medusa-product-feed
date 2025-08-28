@@ -74,13 +74,12 @@ export async function GET(
   }
 
   // Delegate to reusable builder
-  const items = await pf.buildMappedFeedData({
+  const items = pf.buildMappedFeedDataJson({
     regionsModule,
     productModule,
     query,
     regionId: region_id,
     currencyCode: currency_code,
-    mode: "json",
     page: result.success ? result.data?.page : undefined,
     pageSize: result.success ? result.data?.page_size : undefined,
   })

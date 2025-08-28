@@ -59,6 +59,8 @@ If you omit `options`, sensible defaults are used. The `link` is used as the bas
 
 Both endpoints are public by default (no auth middleware). Adjust as needed in your app if you require protection.
 
+For the XML endpoint, the response sets `Content-Type: application/xml`.
+
 ### Query parameters
 
 - `country_code`: Two/three-letter country code used to pick a Region (e.g., `DK`, `US`, `de`). If provided and matched, it takes precedence over `currency`.
@@ -151,6 +153,69 @@ Each variant becomes an `<item>` with `g:`-namespaced fields under an RSS 2.0 `<
 ```
 
 Option titles are sanitized for XML: lowercased, spaces/special characters replaced with `_`, and Danish characters converted (`æ`→`ae`, `ø`→`oe`, `å`→`aa`).
+
+## Programmatic Usage
+
+You can call the service directly in your own routes if you want more control.
+
+### Build JSON items
+
+```ts
+import { PRODUCT_FEED_MODULE } from "@oak-digital/product-feed/modules/product-feed";
+import ProductFeedService from "@oak-digital/product-feed/modules/product-feed/service";
+
+export async function GET(req, res) {
+  const regionsModule = req.scope.resolve(Modules.REGION)
+  const productModule = req.scope.resolve(Modules.PRODUCT)
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+  const pf: ProductFeedService = req.scope.resolve(PRODUCT_FEED_MODULE)
+
+  const items = await pf.buildMappedFeedData({
+    regionsModule,
+    productModule,
+    query,
+    regionId: "...",        // optional
+    currencyCode: "...",    // optional
+    mode: "json",
+  })
+
+  res.status(200).json(items)
+}
+```
+
+### Build XML string
+
+When producing XML, first build mapped items using `mode: "xml"`, then convert them to an XML string using `buildToXml(...)`. Important: set the response header to `Content-Type: application/xml`.
+
+```ts
+import { PRODUCT_FEED_MODULE } from "@oak-digital/product-feed/modules/product-feed";
+import ProductFeedService from "@oak-digital/product-feed/modules/product-feed/service";
+
+export async function GET(req, res) {
+  const regionsModule = req.scope.resolve(Modules.REGION)
+  const productModule = req.scope.resolve(Modules.PRODUCT)
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+  const pf: ProductFeedService = req.scope.resolve(PRODUCT_FEED_MODULE)
+
+  const mapped = await pf.buildMappedFeedData({
+    regionsModule,
+    productModule,
+    query,
+    mode: "xml",
+    // GoogleMerchant: true, // uncomment to prefix keys with g:
+  })
+
+  const xml = await pf.buildToXml(mapped)
+
+  // Ensure XML content type
+  res.setHeader("Content-Type", "application/xml")
+  res.status(200).send(xml)
+}
+```
+
+Notes:
+- Use `GoogleMerchant: true` to prefix XML keys with `g:` in the mapped items.
+- The plugin’s built-in `GET /feed/products-xml` endpoint already does this and sets the proper header.
 
 ## How it works
 

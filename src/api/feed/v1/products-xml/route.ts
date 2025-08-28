@@ -70,45 +70,17 @@ export async function GET(
   }
 
   // Delegate to reusable builder
-  const mappedVariants = await pf.buildMappedFeedData({
+  const xml = await pf.buildFeedXml({
     regionsModule,
     productModule,
     query,
     regionId: region_id,
     currencyCode: currency_code,
-    mode: "xml",
     page: result.success ? result.data?.page : undefined,
     pageSize: result.success ? result.data?.page_size : undefined,
   })
 
 
-  const options = pf.getOptions();
-  // Structure the data for XML conversion according to RSS 2.0 and Google Feed spec
-  const feedObject = {
-    rss: {
-      $: { // Attributes for the <rss> tag
-        'xmlns:g': 'http://base.google.com/ns/1.0',
-        version: '2.0',
-      },
-      channel: {
-        title: options.title, // Customize as needed
-        link: options.link,      // Store's base URL
-        description: options.description, // Customize as needed
-        item: mappedVariants, // Array of item objects
-      },
-    },
-  };
-
-  // Configure the XML builder
-  // - `rootName`: Ensures the root element is 'rss' (though structure implies it)
-  // - `headless`: Set to true to avoid the <?xml ...?> declaration if not desired (Facebook/Google usually accept it)
-  // - `cdata`: Set to true to wrap text nodes in CDATA sections, which can help prevent issues with special characters in descriptions, etc.
-  const builder = new Builder({
-    // rootName: 'rss',
-    headless: false, // Keep the XML declaration
-    cdata: true,     // Use CDATA for text nodes
-  });
-  const xml = builder.buildObject(feedObject);
 
   res.setHeader("Content-Type", "application/xml");
   res.status(200).send(xml);
