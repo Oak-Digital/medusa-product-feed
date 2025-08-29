@@ -93,6 +93,7 @@ export default class ProductFeedService {
     excludeFields?: string[]
 
 
+    removeEmptyValues?: boolean
 
 
     // Internal tuning
@@ -119,6 +120,7 @@ export default class ProductFeedService {
       itemTransform,
       includeFields,
       excludeFields,
+      removeEmptyValues = false,
     } = args
 
     const options = this.getOptions()
@@ -265,7 +267,6 @@ export default class ProductFeedService {
       const batchMapped = await Promise.all(
         productBatch.flatMap((product) => {
           return product.variants
-            .filter((variant: ExtendedVariantDTO) => variant.calculated_price?.original_amount !== undefined)
             .map(async (variant: ExtendedVariantDTO) => {
               const variantOptions = handleVariantOptions(variant.options)
               const availability = availabilityMap.get(variant.id)?.availability || 0
@@ -294,8 +295,8 @@ export default class ProductFeedService {
               let item: Record<string, any> = {
                 id: variant.id,
                 item_group_id: product.id,
-                title: product.title,
-                description: product.description,
+                title: product.title ?? '',
+                description: product.description ?? '',
                 link: `${store_url}/${product.handle}?${linkableOptions}`,
                 image_link: thumbnail,
                 additional_image_1: additionalImages[0],
@@ -306,7 +307,7 @@ export default class ProductFeedService {
                 price: defaultPrice,
                 sale_price: salesPrice,
                 mpn: variant.sku,
-                product_type: (product as any).type?.value,
+                product_type: (product as any).type?.value || "",
                 material: (product as any).material || "",
                 ...variantOptions,
               }
@@ -343,16 +344,20 @@ export default class ProductFeedService {
                   Object.entries(item).filter(([k]) => includeFields.includes(k))
                 )
               }
+
               if (Array.isArray(excludeFields) && excludeFields.length) {
                 excludeFields.forEach((f) => delete item[f])
               }
 
               // Strip empty values
-              Object.keys(item).forEach((key) => {
-                if (item[key] === null || item[key] === undefined || item[key] === "") {
-                  delete item[key]
-                }
-              })
+              if (removeEmptyValues) {
+                Object.keys(item).forEach((key) => {
+                  if (item[key] === null || item[key] === undefined || item[key] === "") {
+                    delete item[key]
+                  }
+                })
+              }
+
               return item
             })
         })

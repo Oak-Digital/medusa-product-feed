@@ -74,7 +74,7 @@ export async function GET(
   }
 
   // Delegate to reusable builder
-  const items = pf.buildMappedFeedDataJson({
+  const items = await pf.buildMappedFeedDataJson({
     regionsModule,
     productModule,
     query,
