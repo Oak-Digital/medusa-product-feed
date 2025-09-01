@@ -297,7 +297,7 @@ export default class ProductFeedService {
                 item_group_id: product.id,
                 title: product.title ?? '',
                 description: product.description ?? '',
-                link: `${store_url}/${product.handle}?${linkableOptions}`,
+                link: `${store_url}/${product.handle}${linkableOptions ? `?${linkableOptions}` : ''}`,
                 image_link: thumbnail,
                 additional_image_1: additionalImages[0],
                 additional_image_2: additionalImages[1],
