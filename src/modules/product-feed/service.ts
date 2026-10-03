@@ -243,8 +243,8 @@ export default class ProductFeedService {
         }
       }
 
-      const availabilityMap = new Map<string, { availability: number }>()
-      const availabilityPromises: Promise<Record<string, { availability: number }>>[] = []
+      const availabilityMap = new Map<string, { availability: number | null }>()
+      const availabilityPromises: Promise<Record<string, { availability: number | null }>>[] = []
       for (const [scId, variantIds] of salesChannelVariantMap.entries()) {
         if (variantIds.length > 0) {
           // @ts-ignore - framework util returns an object keyed by variant id
